@@ -1,17 +1,33 @@
-const setLongitude = (longitude) => {
-  document.getElementById("longitude").textContent = longitude;
-}
+const displayPosition = (prefix, position) => {
+  const { longitude, latitude, altitude, accuracy, speed } = position.coords;
 
-const setLatitude = (latitude) => {
-  document.getElementById("latitude").textContent = latitude;
-}
+  document.getElementById(`${prefix}-longitude`).textContent = longitude;
+  document.getElementById(`${prefix}-latitude`).textContent = latitude;
+  document.getElementById(`${prefix}-altitude`).textContent = altitude ?? "non disponible";
+  document.getElementById(`${prefix}-accuracy`).textContent = `${accuracy} m`;
+  document.getElementById(`${prefix}-speed`).textContent = speed ?? "non disponible";
+  document.getElementById(`${prefix}-date`).textContent = new Date(position.timestamp).toLocaleString();
+};
 
-const setAltitude = (altitude) => {
-  document.getElementById("altitude").textContent = altitude;
-}
+const displayError = (error) => {
+  console.error(error);
+  alert(`Erreur de géolocalisation (${error.code}) : ${error.message}`);
+};
 
-navigator.geolocation.getCurrentPosition((position) => {
-  setLongitude(position.coords.longitude);
-  setLatitude(position.coords.latitude);
-  setAltitude(position.coords.altitude);
-});
+const options = {
+  enableHighAccuracy: true,
+  timeout: 10000,
+  maximumAge: 0,
+};
+
+navigator.geolocation.getCurrentPosition(
+  (position) => displayPosition("gcp", position),
+  displayError,
+  options
+);
+
+navigator.geolocation.watchPosition(
+  (position) => displayPosition("wp", position),
+  displayError,
+  options
+);

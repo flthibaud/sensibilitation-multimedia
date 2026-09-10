@@ -6,18 +6,31 @@
   <title>CartoTD1 - Exo1</title>
 </head>
 <body>
-  <h2>Position :</h2>
-  <ul>
-    <li>longitude : <span id="longitude"></span></li>
-    <li>latitude : <span id="latitude"></span></li>
-    <li>altitude : <span id="altitude"></span></li>
-  </ul>
+  <h1>Géolocalisation</h1>
 
-  <p>Précision de mesure :</p>
+  <section>
+    <h2>getCurrentPosition()</h2>
+    <ul>
+      <li>longitude : <span id="gcp-longitude"></span></li>
+      <li>latitude : <span id="gcp-latitude"></span></li>
+      <li>altitude : <span id="gcp-altitude"></span></li>
+    </ul>
+    <p>Précision de mesure : <span id="gcp-accuracy"></span></p>
+    <p>Vitesse : <span id="gcp-speed"></span></p>
+    <p>Date : <span id="gcp-date"></span></p>
+  </section>
 
-  <p>Vitesse : </p>
-
-  <p>Date : </p>
+  <section>
+    <h2>watchPosition()</h2>
+    <ul>
+      <li>longitude : <span id="wp-longitude"></span></li>
+      <li>latitude : <span id="wp-latitude"></span></li>
+      <li>altitude : <span id="wp-altitude"></span></li>
+    </ul>
+    <p>Précision de mesure : <span id="wp-accuracy"></span></p>
+    <p>Vitesse : <span id="wp-speed"></span></p>
+    <p>Date : <span id="wp-date"></span></p>
+  </section>
 
   <script type="module" src="./js/index.js"></script>
 </body>
