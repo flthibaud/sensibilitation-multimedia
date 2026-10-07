@@ -22,6 +22,62 @@ const light = new THREE.DirectionalLight( 0xffffff, 2 );
 light.position.set( 2, 3, 4 );
 scene.add( light );
 
+// Brouillard : les objets s'estompent dans la couleur de fond avec la distance
+const fogColor = 0x2a3340;
+scene.background = new THREE.Color( fogColor );
+scene.fog = new THREE.Fog( fogColor, 3, 15 );
+
+// Particules de neige
+function createSnowflakeTexture() {
+  const canvas = document.createElement( 'canvas' );
+  canvas.width = 32;
+  canvas.height = 32;
+  const ctx = canvas.getContext( '2d' );
+  const gradient = ctx.createRadialGradient( 16, 16, 0, 16, 16, 16 );
+  gradient.addColorStop( 0, 'rgba(255, 255, 255, 1)' );
+  gradient.addColorStop( 1, 'rgba(255, 255, 255, 0)' );
+  ctx.fillStyle = gradient;
+  ctx.fillRect( 0, 0, 32, 32 );
+  return new THREE.CanvasTexture( canvas );
+}
+
+const SNOW_COUNT = 2000;
+const SNOW_TOP = 5;
+const SNOW_BOTTOM = -5;
+const snowPositions = new Float32Array( SNOW_COUNT * 3 );
+const snowSpeeds = new Float32Array( SNOW_COUNT );
+
+for ( let i = 0; i < SNOW_COUNT; i++ ) {
+  snowPositions[ i * 3 ] = THREE.MathUtils.randFloatSpread( 20 );                 // x
+  snowPositions[ i * 3 + 1 ] = THREE.MathUtils.randFloat( SNOW_BOTTOM, SNOW_TOP ); // y
+  snowPositions[ i * 3 + 2 ] = THREE.MathUtils.randFloat( -10, 4 );               // z
+  snowSpeeds[ i ] = THREE.MathUtils.randFloat( 0.005, 0.02 );
+}
+
+const snowGeometry = new THREE.BufferGeometry();
+snowGeometry.setAttribute( 'position', new THREE.BufferAttribute( snowPositions, 3 ) );
+
+const snowMaterial = new THREE.PointsMaterial( {
+  size: 0.1,
+  map: createSnowflakeTexture(),
+  transparent: true,
+  depthWrite: false,
+} );
+
+const snow = new THREE.Points( snowGeometry, snowMaterial );
+scene.add( snow );
+
+function updateSnow( time ) {
+  for ( let i = 0; i < SNOW_COUNT; i++ ) {
+    snowPositions[ i * 3 + 1 ] -= snowSpeeds[ i ];
+    snowPositions[ i * 3 ] += Math.sin( time / 1000 + i ) * 0.002;  // léger balancement
+
+    // Le flocon arrivé en bas repart en haut
+    if ( snowPositions[ i * 3 + 1 ] < SNOW_BOTTOM ) snowPositions[ i * 3 + 1 ] = SNOW_TOP;
+  }
+  snowGeometry.attributes.position.needsUpdate = true;
+}
+
 // Modèle 3D de la tourelle
 let turret;
 new GLTFLoader().load( './model/portal_turret.glb', ( gltf ) => {
@@ -104,6 +160,8 @@ if ( !window.isSecureContext ) {
 function animate( time ) {
   cube.rotation.x = time / 2000;
   cube.rotation.y = time / 1000;
+
+  updateSnow( time );
 
   if ( turret ) {
     if ( sensorsOn ) {
