@@ -71,12 +71,15 @@ function onMotion( event ) {
 }
 
 async function enableSensors() {
-  // iOS demande une autorisation, déclenchée obligatoirement par un clic
+  // Certains navigateurs demandent une autorisation, déclenchée obligatoirement par un clic
   if ( typeof DeviceOrientationEvent?.requestPermission === 'function' ) {
-    const orientation = await DeviceOrientationEvent.requestPermission();
-    const motion = await DeviceMotionEvent.requestPermission();
-    if ( orientation !== 'granted' || motion !== 'granted' ) {
-      info.textContent = 'Accès aux capteurs refusé';
+    // Les deux demandes partent ensemble, sinon la 2e n'est plus liée au clic
+    const [ orientation, motion ] = await Promise.all( [
+      DeviceOrientationEvent.requestPermission().catch( ( e ) => e.name ),
+      DeviceMotionEvent.requestPermission?.().catch( ( e ) => e.name ) ?? 'granted',
+    ] );
+    if ( orientation !== 'granted' ) {
+      info.textContent = `Accès aux capteurs refusé (orientation : ${ orientation }, mouvement : ${ motion })`;
       return;
     }
   }
