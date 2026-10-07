@@ -33,10 +33,96 @@ new GLTFLoader().load( './model/portal_turret.glb', ( gltf ) => {
 
 camera.position.z = 5;
 
+// --- Capteurs du smartphone ---
+
+const button = document.getElementById( 'sensors' );
+const info = document.getElementById( 'info' );
+
+let sensorsOn = false;
+let reference = null;                     // orientation de départ (calibrage)
+const target = { x: 0, y: 0, z: 0 };      // rotation visée pour la tourelle
+let jump = 0;                             // vitesse verticale du saut (secousse)
+
+// Ramène un angle en degrés dans [-180, 180]
+function wrap( deg ) {
+  return ( ( deg + 540 ) % 360 ) - 180;
+}
+
+// DeviceOrientation : l'inclinaison du téléphone fait pivoter la tourelle
+function onOrientation( event ) {
+  if ( event.alpha === null ) return;
+
+  if ( !reference ) reference = { alpha: event.alpha, beta: event.beta, gamma: event.gamma };
+
+  target.y = THREE.MathUtils.degToRad( wrap( event.alpha - reference.alpha ) );  // rotation sur soi
+  target.x = THREE.MathUtils.degToRad( wrap( event.beta - reference.beta ) );    // avant / arrière
+  target.z = THREE.MathUtils.degToRad( -( event.gamma - reference.gamma ) );     // gauche / droite
+
+  info.textContent = `alpha ${ event.alpha.toFixed( 0 ) }°  beta ${ event.beta.toFixed( 0 ) }°  gamma ${ event.gamma.toFixed( 0 ) }°`;
+}
+
+// DeviceMotion : une secousse fait sauter la tourelle
+function onMotion( event ) {
+  const a = event.acceleration;
+  if ( !a || a.x === null ) return;
+
+  const force = Math.hypot( a.x, a.y, a.z );
+  if ( force > 15 && jump === 0 && turret ) jump = 0.15;
+}
+
+async function enableSensors() {
+  // iOS demande une autorisation, déclenchée obligatoirement par un clic
+  if ( typeof DeviceOrientationEvent?.requestPermission === 'function' ) {
+    const orientation = await DeviceOrientationEvent.requestPermission();
+    const motion = await DeviceMotionEvent.requestPermission();
+    if ( orientation !== 'granted' || motion !== 'granted' ) {
+      info.textContent = 'Accès aux capteurs refusé';
+      return;
+    }
+  }
+
+  if ( !sensorsOn ) {
+    window.addEventListener( 'deviceorientation', onOrientation );
+    window.addEventListener( 'devicemotion', onMotion );
+    sensorsOn = true;
+  }
+
+  reference = null;  // un nouveau clic recalibre la position "neutre"
+  button.textContent = 'Recalibrer';
+  info.textContent = 'En attente des capteurs…';
+}
+
+button.addEventListener( 'click', enableSensors );
+
+if ( !window.isSecureContext ) {
+  info.textContent = 'Les capteurs nécessitent HTTPS (ou localhost)';
+}
+
 function animate( time ) {
   cube.rotation.x = time / 2000;
   cube.rotation.y = time / 1000;
-  if ( turret ) turret.rotation.y = time / 1500;
+
+  if ( turret ) {
+    if ( sensorsOn ) {
+      // Lissage : la tourelle rattrape progressivement la rotation visée
+      turret.rotation.x += ( target.x - turret.rotation.x ) * 0.15;
+      turret.rotation.y += ( target.y - turret.rotation.y ) * 0.15;
+      turret.rotation.z += ( target.z - turret.rotation.z ) * 0.15;
+    } else {
+      turret.rotation.y = time / 1500;
+    }
+
+    // Saut avec gravité
+    if ( jump !== 0 || turret.position.y > -1 ) {
+      turret.position.y += jump;
+      jump -= 0.01;
+      if ( turret.position.y <= -1 ) {
+        turret.position.y = -1;
+        jump = 0;
+      }
+    }
+  }
+
   renderer.render( scene, camera );
 }
 renderer.setAnimationLoop( animate );
