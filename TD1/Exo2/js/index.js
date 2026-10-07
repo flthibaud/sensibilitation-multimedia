@@ -61,8 +61,8 @@ fetch("https://geo.api.gouv.fr/departements/06/communes?format=geojson&geometry=
     const communes = L.geoJSON(data, {
       style: { color: "green", weight: 1, fillOpacity: 0.05 },
       onEachFeature: (feature, layer) => layer.bindPopup(feature.properties.nom),
-    });
-    layersControl.addOverlay(communes, "Communes (06)");
+    })
+    .addTo(map);
   })
   .catch((error) => console.error("GeoJSON :", error));
 
