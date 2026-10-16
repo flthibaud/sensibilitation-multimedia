@@ -1,6 +1,7 @@
 // ThreeJS and Third-party deps
 import * as THREE from 'three'
 import * as dat from 'dat.gui'
+import * as satellite from 'satellite.js'
 import Stats from "three/examples/jsm/libs/stats.module.js"
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js"
 
@@ -39,6 +40,191 @@ const params = {
   atmPowFactor: { value: 4.1 },
   atmMultiplier: { value: 9.5 },
   realTime: true, // synchronise le jour/nuit avec l'heure réelle
+  showFlags: true, // affiche les drapeaux des pays sur le globe
+  showISS: true, // affiche la station spatiale et son orbite
+}
+
+/**************************************************
+ * Station spatiale internationale (ISS)
+ * On récupère ses éléments orbitaux (TLE) sur CelesTrak, puis satellite.js calcule
+ * sa position exacte à n'importe quel instant : pas besoin d'appeler une API à chaque image.
+ *************************************************/
+const EARTH_RADIUS_KM = 6371
+const EARTH_RADIUS_SCENE = 10 // rayon de la SphereGeometry de la Terre
+const TLE_CACHE_KEY = "iss-tle"
+const TLE_CACHE_DURATION = 12 * 3600 * 1000 // CelesTrak demande de ne pas recharger un TLE plus d'une fois toutes les 2h
+
+/**
+ * Récupère le TLE de l'ISS (n° NORAD 25544), avec cache localStorage
+ * @returns {Promise<object>} le satrec satellite.js prêt à être propagé
+ */
+const fetchISSSatrec = async () => {
+  let lines = null
+  try {
+    const cached = JSON.parse(localStorage.getItem(TLE_CACHE_KEY))
+    if (cached && Date.now() - cached.date < TLE_CACHE_DURATION) lines = cached.lines
+  } catch (e) { /* pas de cache */ }
+
+  if (!lines) {
+    const res = await fetch("https://celestrak.org/NORAD/elements/gp.php?CATNR=25544&FORMAT=TLE")
+    if (!res.ok) throw new Error(`CelesTrak : ${res.status}`)
+    // format : 1 ligne de nom puis les 2 lignes du TLE
+    lines = (await res.text()).trim().split("\n").map((line) => line.trim()).slice(1, 3)
+    try {
+      localStorage.setItem(TLE_CACHE_KEY, JSON.stringify({ date: Date.now(), lines }))
+    } catch (e) { /* localStorage indisponible */ }
+  }
+  return satellite.twoline2satrec(lines[0], lines[1])
+}
+
+/**
+ * Position de l'ISS à une date donnée, dans le repère local de la Terre
+ * @returns {THREE.Vector3 | null}
+ */
+const getISSLocalPosition = (satrec, date) => {
+  const posVel = satellite.propagate(satrec, date)
+  if (!posVel || !posVel.position) return null
+  // ECI (repère inertiel) -> latitude/longitude/altitude, grâce au temps sidéral de Greenwich
+  const geo = satellite.eciToGeodetic(posVel.position, satellite.gstime(date))
+  const radius = EARTH_RADIUS_SCENE * (EARTH_RADIUS_KM + geo.height) / EARTH_RADIUS_KM
+  return latLonToLocalDirection(geo.latitude, geo.longitude).multiplyScalar(radius)
+}
+
+/**
+ * Modèle simplifié de l'ISS construit avec des primitives.
+ * Orientation : +Z = sens de déplacement, +Y = vers l'espace (opposé à la Terre).
+ * Taille très exagérée : à l'échelle réelle (109 m), l'ISS serait invisible.
+ */
+const createISSModel = () => {
+  const iss = new THREE.Group()
+  const metal = new THREE.MeshStandardMaterial({ color: 0xd8d8d8, metalness: 0.6, roughness: 0.4 })
+  const panel = new THREE.MeshStandardMaterial({ color: 0x2a3d7a, metalness: 0.8, roughness: 0.3, side: THREE.DoubleSide })
+  const radiator = new THREE.MeshStandardMaterial({ color: 0xf2f2f2, roughness: 0.8, side: THREE.DoubleSide })
+
+  // poutre principale, perpendiculaire au déplacement
+  const truss = new THREE.Mesh(new THREE.BoxGeometry(1, 0.03, 0.03), metal)
+  iss.add(truss)
+
+  // modules pressurisés, alignés dans le sens du déplacement
+  const modules = new THREE.Mesh(new THREE.CylinderGeometry(0.035, 0.035, 0.6, 12), metal)
+  modules.rotation.x = Math.PI / 2
+  modules.position.y = -0.04
+  iss.add(modules)
+
+  // 4 paires de panneaux solaires aux extrémités de la poutre
+  const panelGeo = new THREE.PlaneGeometry(0.08, 0.35)
+  for (const x of [-0.46, -0.36, 0.36, 0.46]) {
+    for (const z of [-0.2, 0.2]) {
+      const mesh = new THREE.Mesh(panelGeo, panel)
+      mesh.rotation.x = -Math.PI / 2 // à plat, face vers l'espace
+      mesh.position.set(x, 0, z)
+      iss.add(mesh)
+    }
+  }
+
+  // radiateurs près du centre
+  for (const x of [-0.15, 0.15]) {
+    const mesh = new THREE.Mesh(new THREE.PlaneGeometry(0.06, 0.18), radiator)
+    mesh.position.set(x, 0, -0.12)
+    iss.add(mesh)
+  }
+
+  iss.scale.setScalar(0.5)
+  return iss
+}
+
+/**
+ * Trace de l'orbite autour de l'instant présent (± une demi-orbite, ~46 min).
+ * Calculée dans le repère de la Terre : elle ne se referme pas, car la Terre tourne sous l'ISS.
+ */
+const computeISSOrbitPoints = (satrec, date) => {
+  const points = []
+  const halfOrbitMs = 46 * 60 * 1000
+  for (let t = -halfOrbitMs; t <= halfOrbitMs; t += 20 * 1000) {
+    const pos = getISSLocalPosition(satrec, new Date(date.getTime() + t))
+    if (pos) points.push(pos)
+  }
+  return points
+}
+
+/**************************************************
+ * Drapeaux des pays (API REST Countries v5)
+ * La v3.1 (/v3.1/all) a été désactivée : la v5 exige une clé API gratuite.
+ * La clé n'est pas dans ce fichier : le serveur Go la lit dans le .env et relaie
+ * les requêtes via /api/countries (voir main.go), elle ne passe donc jamais par le navigateur.
+ *************************************************/
+const COUNTRIES_CACHE_KEY = "restcountries-v5-flags"
+const COUNTRIES_CACHE_DURATION = 7 * 24 * 3600 * 1000 // 7 jours : le plan gratuit est limité à 1000 requêtes/mois
+
+/**
+ * Récupère tous les pays (nom, code, coordonnées, drapeau).
+ * La v5 est paginée (100 pays max par requête en gratuit), donc on enchaîne les pages.
+ * Le résultat est mis en cache dans le localStorage pour économiser le quota.
+ * @returns {Promise<Array<{ name: string, code: string, lat: number, lng: number, flagUrl: string }>>}
+ */
+const fetchCountries = async () => {
+  try {
+    const cached = JSON.parse(localStorage.getItem(COUNTRIES_CACHE_KEY))
+    if (cached && Date.now() - cached.date < COUNTRIES_CACHE_DURATION) return cached.countries
+  } catch (e) { /* cache absent ou illisible : on refait la requête */ }
+
+  const countries = []
+  const limit = 100
+  for (let offset = 0; ; offset += limit) {
+    // proxy du serveur Go, qui ajoute la clé API avant d'appeler api.restcountries.com/countries/v5
+    const url = "/api/countries"
+      + `?limit=${limit}&offset=${offset}`
+      + "&response_fields=names.common,codes.alpha_2,coordinates,flag.url_png"
+    const res = await fetch(url)
+    const json = await res.json()
+    if (!res.ok || !json.data) {
+      throw new Error(`REST Countries : ${json.errors?.[0]?.message ?? res.status}`)
+    }
+
+    for (const country of json.data.objects) {
+      if (!country.coordinates || !country.flag?.url_png) continue
+      countries.push({
+        name: country.names.common,
+        code: country.codes.alpha_2,
+        lat: country.coordinates.lat,
+        lng: country.coordinates.lng,
+        // l'API renvoie la version 640px, 160px suffit largement pour un petit drapeau
+        flagUrl: country.flag.url_png.replace("/w640/", "/w160/"),
+      })
+    }
+    if (json.data.objects.length < limit) break
+  }
+
+  try {
+    localStorage.setItem(COUNTRIES_CACHE_KEY, JSON.stringify({ date: Date.now(), countries }))
+  } catch (e) { /* localStorage indisponible : tant pis pour le cache */ }
+  return countries
+}
+
+/**
+ * Crée un sprite (image toujours tournée vers la caméra) par pays, posé à sa latitude/longitude
+ * @param {THREE.Object3D} parent objet auquel attacher les drapeaux (la Terre, pour qu'ils tournent avec elle)
+ * @param {number} radius distance au centre de la Terre
+ */
+const addFlags = async (parent, radius) => {
+  const countries = await fetchCountries()
+  const textureLoader = new THREE.TextureLoader()
+  const flagHeight = 0.3
+
+  for (const country of countries) {
+    textureLoader.load(country.flagUrl, (texture) => {
+      texture.colorSpace = THREE.SRGBColorSpace
+      const sprite = new THREE.Sprite(new THREE.SpriteMaterial({ map: texture }))
+      // on garde les proportions du drapeau (la Suisse est carrée, le Qatar très allongé...)
+      const aspect = texture.image.width / texture.image.height
+      sprite.scale.set(flagHeight * aspect, flagHeight, 1)
+      sprite.position.copy(
+        latLonToLocalDirection(country.lat * Math.PI / 180, country.lng * Math.PI / 180).multiplyScalar(radius)
+      )
+      sprite.name = country.name
+      parent.add(sprite)
+    })
+  }
 }
 
 /**
@@ -275,22 +461,38 @@ let app = {
       earthMat.userData.shader = shader
     }
 
+    // Drapeaux : attachés à la Terre pour suivre sa rotation, juste au-dessus des nuages (rayon 10.05).
+    // Pas de await : le globe s'affiche sans attendre l'API, les drapeaux apparaissent au fur et à mesure.
+    this.flags = new THREE.Group()
+    this.flags.visible = params.showFlags
+    this.earth.add(this.flags)
+    addFlags(this.flags, 10.3).catch((error) => console.warn("Impossible de charger les drapeaux :", error))
+
+    // ISS : attachée à la Terre, car satellite.js donne sa position en latitude/longitude
+    this.issGroup = new THREE.Group()
+    this.issGroup.visible = params.showISS
+    this.earth.add(this.issGroup)
+    this.iss = createISSModel()
+    this.iss.visible = false // cachée tant que le TLE n'est pas chargé
+    this.issGroup.add(this.iss)
+    this.issOrbit = new THREE.Line(
+      new THREE.BufferGeometry(),
+      new THREE.LineBasicMaterial({ color: 0xffcc66, transparent: true, opacity: 0.5 })
+    )
+    this.issGroup.add(this.issOrbit)
+    this.issOrbitUpdatedAt = 0
+    fetchISSSatrec()
+      .then((satrec) => { this.issSatrec = satrec })
+      .catch((error) => console.warn("Impossible de charger l'orbite de l'ISS :", error))
+
     // GUI controls
     const gui = new dat.GUI()
-    gui.add(params, "sunIntensity", 0.0, 5.0, 0.1).onChange((val) => {
-      this.dirLight.intensity = val
-    }).name("Sun Intensity")
-    gui.add(params, "metalness", 0.0, 1.0, 0.05).onChange((val) => {
-      earthMat.metalness = val
-    }).name("Ocean Metalness")
-    gui.add(params, "speedFactor", 0.1, 20.0, 0.1).name("Rotation Speed")
-    gui.add(params, "realTime").onChange((val) => {
-      // en sortant du mode temps réel, on remet le soleil à sa position d'origine
-      if (!val) this.dirLight.position.set(-50, 0, 30)
-    }).name("Temps réel")
-    gui.add(params.atmOpacity, "value", 0.0, 1.0, 0.05).name("atmOpacity")
-    gui.add(params.atmPowFactor, "value", 0.0, 20.0, 0.1).name("atmPowFactor")
-    gui.add(params.atmMultiplier, "value", 0.0, 20.0, 0.1).name("atmMultiplier")
+    gui.add(params, "showFlags").onChange((val) => {
+      this.flags.visible = val
+    }).name("Afficher les drapeaux")
+    gui.add(params, "showISS").onChange((val) => {
+      this.issGroup.visible = val
+    }).name("Afficher l'ISS")
 
     // Stats - show fps
     this.stats1 = new Stats()
@@ -300,6 +502,29 @@ let app = {
     this.container.appendChild(this.stats1.domElement)
 
     await updateLoadingProgressBar(1.0, 100)
+  },
+  updateISS() {
+    const now = new Date()
+    const pos = getISSLocalPosition(this.issSatrec, now)
+    // position 1 s plus tard, pour connaître la direction de déplacement
+    const next = getISSLocalPosition(this.issSatrec, new Date(now.getTime() + 1000))
+    if (!pos || !next) return
+
+    this.iss.visible = true
+    this.iss.position.copy(pos)
+
+    // orientation : Y vers l'espace, Z dans le sens du déplacement
+    const up = pos.clone().normalize()
+    const forward = next.sub(pos).normalize()
+    const right = new THREE.Vector3().crossVectors(up, forward).normalize()
+    forward.crossVectors(right, up) // on ré-orthogonalise
+    this.iss.quaternion.setFromRotationMatrix(new THREE.Matrix4().makeBasis(right, up, forward))
+
+    // la trace de l'orbite ne bouge que lentement : on la recalcule toutes les 10 s
+    if (now.getTime() - this.issOrbitUpdatedAt > 10000) {
+      this.issOrbit.geometry.setFromPoints(computeISSOrbitPoints(this.issSatrec, now))
+      this.issOrbitUpdatedAt = now.getTime()
+    }
   },
   // @param {number} interval - time elapsed between 2 frames
   // @param {number} elapsed - total time elapsed since app start
@@ -323,6 +548,8 @@ let app = {
       const sunDir = latLonToLocalDirection(lat, lon).transformDirection(this.earth.matrixWorld)
       this.dirLight.position.copy(sunDir.multiplyScalar(50))
     }
+
+    if (this.issSatrec) this.updateISS()
 
     const shader = this.earth.material.userData.shader
     if ( shader ) {
