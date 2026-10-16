@@ -302,6 +302,13 @@ let app = {
     // OrbitControls
     this.controls = new OrbitControls(camera, renderer.domElement)
     this.controls.enableDamping = true
+    // limites du zoom (distance entre la caméra et le centre de la Terre, de rayon 10) :
+    // - min : on reste hors de la sphère d'atmosphère (rayon 12.5), au-dessus de l'ISS et des drapeaux
+    // - max : bien avant le plan "far" de la caméra (1000), au-delà duquel la Terre n'est plus dessinée
+    this.controls.minDistance = 12
+    this.controls.maxDistance = 100
+    // pas de déplacement latéral : il décentrerait la Terre et contournerait ces limites
+    this.controls.enablePan = false
 
     // adding a virtual sun using directional light
     this.dirLight = new THREE.DirectionalLight(0xffffff, params.sunIntensity)
