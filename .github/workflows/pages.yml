@@ -1,0 +1,45 @@
+name: Déploiement GitHub Pages
+
+on:
+  push:
+    branches: [master]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v5
+
+      # remplace le marqueur par la clé stockée dans les secrets du dépôt
+      # (Settings > Secrets and variables > Actions > RESTCOUNTRIES_API_KEY)
+      - name: Injection de la clé API REST Countries
+        env:
+          RESTCOUNTRIES_API_KEY: ${{ secrets.RESTCOUNTRIES_API_KEY }}
+        run: |
+          if [ -z "$RESTCOUNTRIES_API_KEY" ]; then
+            echo "::error::Secret RESTCOUNTRIES_API_KEY manquant"
+            exit 1
+          fi
+          sed -i "s|__RESTCOUNTRIES_API_KEY__|${RESTCOUNTRIES_API_KEY}|g" TD2/Exo2/js/index.js
+
+      - uses: actions/configure-pages@v5
+
+      - uses: actions/upload-pages-artifact@v4
+        with:
+          path: .
+
+      - id: deployment
+        uses: actions/deploy-pages@v4

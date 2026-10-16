@@ -150,9 +150,14 @@ const computeISSOrbitPoints = (satrec, date) => {
 /**************************************************
  * Drapeaux des pays (API REST Countries v5)
  * La v3.1 (/v3.1/all) a été désactivée : la v5 exige une clé API gratuite.
- * La clé n'est pas dans ce fichier : le serveur Go la lit dans le .env et relaie
- * les requêtes via /api/countries (voir main.go), elle ne passe donc jamais par le navigateur.
+ * - Sur GitHub Pages : le marqueur ci-dessous est remplacé par la vraie clé au déploiement
+ *   (secret GitHub, voir .github/workflows/pages.yml). La clé est alors visible dans la page :
+ *   il faut restreindre ses hostnames autorisés au domaine github.io sur restcountries.com.
+ * - En local : le marqueur reste tel quel, on passe par le proxy du serveur Go (/api/countries)
+ *   qui lit la clé dans le .env (voir main.go).
  *************************************************/
+const RESTCOUNTRIES_API_KEY = "__RESTCOUNTRIES_API_KEY__"
+const hasInjectedKey = !RESTCOUNTRIES_API_KEY.startsWith("__")
 const COUNTRIES_CACHE_KEY = "restcountries-v5-flags"
 const COUNTRIES_CACHE_DURATION = 7 * 24 * 3600 * 1000 // 7 jours : le plan gratuit est limité à 1000 requêtes/mois
 
@@ -171,11 +176,13 @@ const fetchCountries = async () => {
   const countries = []
   const limit = 100
   for (let offset = 0; ; offset += limit) {
-    // proxy du serveur Go, qui ajoute la clé API avant d'appeler api.restcountries.com/countries/v5
-    const url = "/api/countries"
+    // avec la clé injectée on appelle l'API directement, sinon le proxy Go s'en charge
+    const baseUrl = hasInjectedKey ? "https://api.restcountries.com/countries/v5" : "/api/countries"
+    const url = baseUrl
       + `?limit=${limit}&offset=${offset}`
       + "&response_fields=names.common,codes.alpha_2,coordinates,flag.url_png"
-    const res = await fetch(url)
+    const headers = hasInjectedKey ? { Authorization: `Bearer ${RESTCOUNTRIES_API_KEY}` } : {}
+    const res = await fetch(url, { headers })
     const json = await res.json()
     if (!res.ok || !json.data) {
       throw new Error(`REST Countries : ${json.errors?.[0]?.message ?? res.status}`)
