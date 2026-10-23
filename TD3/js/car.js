@@ -15,9 +15,12 @@ export function createCar(lng, lat, heading) {
   return { lng, lat, heading, speed: 0 }
 }
 
+// angles essayés, du plus petit au plus grand, pour longer le bord de la route au lieu de s'arrêter
+const SLIDE_ANGLES = [15, -15, 30, -30, 45, -45, 60, -60]
+
 // modèle "arcade" : pas de vraie physique, juste de quoi rendre la conduite agréable
-// isOnRoad(lng, lat) : la voiture s'arrête net si elle allait QUITTER la route
-// (hors route, elle reste libre, sinon elle serait bloquée dès qu'elle démarre à côté d'une ligne)
+// isOnRoad(lng, lat) : on empêche seulement de QUITTER la route
+// (hors route, la voiture reste libre, sinon elle serait bloquée dès qu'elle démarre à côté d'une ligne)
 export function updateCar(car, { throttle, steer }, dt, isOnRoad) {
   if (throttle > 0) car.speed += (car.speed < 0 ? BRAKE : ACCEL) * dt
   else if (throttle < 0) car.speed -= (car.speed > 0 ? BRAKE : ACCEL) * dt
@@ -28,17 +31,32 @@ export function updateCar(car, { throttle, steer }, dt, isOnRoad) {
   const grip = THREE.MathUtils.clamp(car.speed / 5, -1, 1)
   car.heading = (car.heading + steer * TURN_RATE * grip * dt + 360) % 360
 
-  const rad = THREE.MathUtils.degToRad(car.heading)
-  const east = Math.sin(rad) * car.speed * dt
-  const north = Math.cos(rad) * car.speed * dt
-  const lat = car.lat + north / METERS_PER_DEG_LAT
-  const lng = car.lng + east / (METERS_PER_DEG_LAT * Math.cos(THREE.MathUtils.degToRad(car.lat)))
-  if (!isOnRoad(lng, lat) && isOnRoad(car.lng, car.lat)) {
-    car.speed = 0
-    return
+  // position atteinte en roulant dans la direction "heading" pendant dt
+  const step = (heading) => {
+    const rad = THREE.MathUtils.degToRad(heading)
+    const east = Math.sin(rad) * car.speed * dt
+    const north = Math.cos(rad) * car.speed * dt
+    return [
+      car.lng + east / (METERS_PER_DEG_LAT * Math.cos(THREE.MathUtils.degToRad(car.lat))),
+      car.lat + north / METERS_PER_DEG_LAT,
+    ]
   }
-  car.lat = lat
-  car.lng = lng
+
+  let next = step(car.heading)
+  if (car.speed !== 0 && !isOnRoad(...next) && isOnRoad(car.lng, car.lat)) {
+    // on longe le bord : direction la plus proche du cap qui reste sur la route
+    const angle = SLIDE_ANGLES.find((a) => isOnRoad(...step(car.heading + a)))
+    if (angle === undefined) {
+      car.speed = 0 // face au bord : seule la marche arrière permet de repartir
+      return
+    }
+    next = step(car.heading + angle)
+    // la voiture s'aligne progressivement sur le bord (sinon la caméra sauterait de 15° d'un coup)
+    car.heading = (car.heading + angle * Math.min(1, 5 * dt) + 360) % 360
+    // frotter le bord freine, d'autant plus que l'angle est fort
+    car.speed -= Math.sign(car.speed) * BRAKE * dt * (Math.abs(angle) / 60)
+  }
+  ;[car.lng, car.lat] = next
 }
 
 // Sedan du Car Kit de Kenney (CC0) : environ 2,6 unités de long, l'avant vers +z

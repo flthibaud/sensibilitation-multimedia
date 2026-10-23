@@ -4,7 +4,8 @@ import { createCar, updateCar, createCarLayer } from './car.js'
 
 // départ : sur la ligne des Champs-Élysées à la sortie du rond-point, face à l'Arc de Triomphe
 // (doit être sur une ligne de route, sinon la voiture est bloquée dès le départ)
-const car = createCar(2.309576, 48.869157, 296)
+const START = [2.309576, 48.869157, 296]
+const car = createCar(...START)
 
 const CAMERA = { zoom: 20, pitch: 75 }
 const ROAD_MARGIN = 8 // m, environ deux voies de chaque côté de la ligne
@@ -44,14 +45,23 @@ map.on('load', () => {
     return map.queryRenderedFeatures(box, { layers: roadLayers }).length > 0
   }
 
-  let last = performance.now()
+  let last
   function frame(now) {
     const dt = Math.min((now - last) / 1000, 0.1) // borne si l'onglet était en arrière-plan
     last = now
-    updateCar(car, getInput(), dt, isOnRoad)
+    const input = getInput()
+    if (input.reset) Object.assign(car, createCar(...START))
+    updateCar(car, input, dt, isOnRoad)
     // jumpTo redessine la carte, donc aussi la couche de la voiture
     map.jumpTo({ center: [car.lng, car.lat], bearing: car.heading, ...CAMERA })
     requestAnimationFrame(frame)
   }
-  requestAnimationFrame(frame)
+
+  // "idle" = toutes les tuiles visibles sont chargées : avant, les routes ne sont pas encore
+  // connues et la voiture ne pourrait pas rouler correctement
+  map.once('idle', () => {
+    document.getElementById('chargement').classList.add('cache')
+    last = performance.now()
+    requestAnimationFrame(frame)
+  })
 })

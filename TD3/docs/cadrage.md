@@ -18,16 +18,49 @@ Ville : **Paris**, départ au rond-point des Champs-Élysées, face à l'Arc de 
 - [x] Caméra 3e personne : la carte suit la voiture et tourne avec elle.
 - [x] Déployé sur GitHub Pages avec le reste du dépôt.
 
-### Bonus (si le temps le permet, dans cet ordre)
+### Améliorations (dans cet ordre)
 
-1. ✅ Rester sur la route : la voiture s'arrête si elle allait s'éloigner de plus de 8 m (`ROAD_MARGIN`) de toute ligne `road_*` ou `bridge_*` (chemins piétons et rails exclus). Limites : une seule marge pour toutes les routes, donc c'est trop large pour une petite rue et trop étroit pour une très grande avenue. Et on ne « glisse » pas le long du bord : il faut reculer.
-2. Compteur de vitesse (HUD en HTML par-dessus la carte).
-3. Choix de la ville de départ (liste ou géolocalisation, réutilise le TD1).
-4. Cycle jour/nuit (couleurs du style + lumière Three.js).
+Objectif : passer d'une démo technique à un projet agréable à utiliser.
+
+**Déjà fait**
+
+- [x] Rester sur la route : la voiture ne peut pas s'éloigner de plus de 8 m (`ROAD_MARGIN`) d'une ligne `road_*` ou `bridge_*` (chemins piétons et rails exclus). Limite : une seule marge pour toutes les routes, donc c'est trop large pour une petite rue et trop étroit pour une très grande avenue.
+
+**Partie 1 : corriger ce qui frustre**
+
+- [x] Glisser le long du bord : au contact, on essaie des directions proches du cap (±15°, ±30°, ±45°, ±60°). La voiture suit la première qui reste sur la route, s'aligne progressivement dessus et ralentit d'autant plus que l'angle est fort. Arrêt net seulement face au bord.
+- [x] `R` : retour au point de départ. L'appui est mémorisé, donc même un appui très bref compte.
+- [x] Écran de chargement : la conduite ne démarre qu'une fois les tuiles chargées (événement `idle`), sinon les routes ne sont pas encore connues.
+
+**Partie 2 : sensation de conduite**
+
+- [ ] Caméra lissée : elle tourne avec un léger retard au lieu de rester collée au cap, et dézoome un peu avec la vitesse.
+- [ ] Roues qui tournent et braquent (le modèle de Kenney a des nœuds `wheel-front-left`, etc.).
+- [ ] Compteur de vitesse en km/h (HTML par-dessus la carte).
+- [ ] Son du moteur dont la tonalité suit la vitesse (Web Audio API).
+
+**Partie 3 : donner un but**
+
+- [ ] Parcours de monuments (Arc de Triomphe, Concorde, Louvre, Tour Eiffel) : points de passage, chrono, flèche vers le prochain.
+- [ ] Mini-carte vue du dessus (deuxième carte MapLibre) avec la position de la voiture.
+
+**Partie 4 : ambiance**
+
+- [ ] Ciel (`sky` de MapLibre) au lieu du fond blanc, bâtiments un peu colorés.
+- [ ] Mode nuit : style sombre et phares de la voiture (lumière Three.js).
+
+**Partie 5 : rendu du TD**
+
+- [ ] `TD3/README.md` : lancement, commandes, crédits (OpenFreeMap, OpenStreetMap, Kenney), lien GitHub Pages.
+- [ ] Journal de travail avec l'IA (voir la dernière section).
+
+**Plus tard, si le temps le permet**
+
+- [ ] Choix de la ville de départ (liste, ou géolocalisation en réutilisant le TD1).
 
 ### Hors périmètre
 
-Physique réaliste, collisions avec les bâtiments, multijoueur, trafic, mobile/tactile, son.
+Physique réaliste, collisions précises avec les bâtiments, multijoueur, trafic, mobile/tactile.
 
 ## Architecture
 
@@ -40,18 +73,20 @@ TD3/
 ├── js/
 │   ├── main.js       # création de la carte, boucle d'animation
 │   ├── car.js        # état de la voiture (position, cap, vitesse) + modèle Three.js (custom layer)
-│   └── controls.js   # clavier → accélération / direction
+│   └── controls.js   # clavier → accélération / direction / retour au départ
 └── assets/
-    └── car.glb       # modèle libre de droits (ex : Kenney Car Kit, CC0)
+    ├── car.glb       # Kenney Car Kit (CC0)
+    └── Textures/     # texture utilisée par car.glb, à garder à côté
 ```
 
 ### Boucle d'une frame
 
-1. `controls` donne l'état des touches.
+1. `controls` donne l'état des touches (`R` remet la voiture au départ).
 2. `car` met à jour vitesse et cap (modèle arcade : accélération, frottement, braquage proportionnel à la vitesse).
 3. Déplacement en mètres converti en lng/lat :
    `dLat = dy / 111320`, `dLng = dx / (111320 * cos(lat))`.
-4. `map.jumpTo({ center: voiture, bearing: cap, pitch: 75, zoom: 19 })`.
+   Si la position suivante quitte la route, la voiture glisse le long du bord (voir Partie 1).
+4. `map.jumpTo({ center: voiture, bearing: cap, pitch: 75, zoom: 20 })`.
 5. La couche custom redessine la voiture à sa position, orientée selon le cap.
 
 ## Étapes

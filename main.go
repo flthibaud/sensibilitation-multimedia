@@ -16,6 +16,15 @@ func loggingMiddleware(next http.Handler) http.Handler {
 	})
 }
 
+// noCache oblige le navigateur à revérifier chaque fichier : sans ça, il peut garder
+// une ancienne version d'un script modifié et on ne voit pas ses changements
+func noCache(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Cache-Control", "no-cache")
+		next.ServeHTTP(w, r)
+	})
+}
+
 // hideDotFiles empêche de servir les fichiers/dossiers cachés (.env, .git...)
 func hideDotFiles(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -102,7 +111,7 @@ func main() {
 	http.Handle("/api/countries", loggingMiddleware(restCountriesProxy(apiKey)))
 
 	fileserver := http.FileServer(http.Dir("."))
-	http.Handle("/", loggingMiddleware(hideDotFiles(fileserver)))
+	http.Handle("/", loggingMiddleware(noCache(hideDotFiles(fileserver))))
 
 	log.Printf("Serveur démarré sur http://localhost:%s", port)
 
