@@ -23,6 +23,17 @@
         font: 14px sans-serif;
         border-radius: 4px;
       }
+      #vitesse {
+        position: absolute;
+        bottom: 20px;
+        left: 20px;
+        padding: 8px 16px;
+        background: rgba(0, 0, 0, 0.6);
+        color: white;
+        font: bold 32px sans-serif;
+        font-variant-numeric: tabular-nums; /* les chiffres ne "sautent" pas en changeant */
+        border-radius: 4px;
+      }
       #chargement {
         position: absolute;
         inset: 0;
@@ -42,7 +53,8 @@
   </head>
   <body>
     <div id="map"></div>
-    <div id="aide">Z / ↑ avancer · S / ↓ freiner, reculer · Q D / ← → tourner · R recommencer</div>
+    <div id="aide">Z / ↑ avancer · S / ↓ freiner, reculer · Q D / ← → tourner · R recommencer · M couper le son</div>
+    <div id="vitesse" aria-live="off">0 km/h</div>
     <div id="chargement" role="status">Chargement de Paris…</div>
 
     <script type="importmap">

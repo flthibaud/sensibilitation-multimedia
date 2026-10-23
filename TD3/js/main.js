@@ -1,6 +1,7 @@
 import * as maplibregl from 'maplibre-gl'
 import { getInput } from './controls.js'
-import { createCar, updateCar, createCarLayer } from './car.js'
+import { createCar, updateCar, createCarLayer, MAX_SPEED } from './car.js'
+import { updateEngine } from './engine.js'
 
 // départ : sur la ligne des Champs-Élysées à la sortie du rond-point, face à l'Arc de Triomphe
 // (doit être sur une ligne de route, sinon la voiture est bloquée dès le départ)
@@ -8,6 +9,8 @@ const START = [2.309576, 48.869157, 296]
 const car = createCar(...START)
 
 const CAMERA = { zoom: 20, pitch: 75 }
+const CAMERA_LAG = 4 // plus c'est petit, plus la caméra met du temps à suivre les virages
+const ZOOM_OUT = 0.7 // dézoom à vitesse max, pour voir plus loin quand on va vite
 const ROAD_MARGIN = 8 // m, environ deux voies de chaque côté de la ligne
 
 const map = new maplibregl.Map({
@@ -45,15 +48,31 @@ map.on('load', () => {
     return map.queryRenderedFeatures(box, { layers: roadLayers }).length > 0
   }
 
+  const speedometer = document.getElementById('vitesse')
+  let cameraBearing = car.heading
   let last
   function frame(now) {
     const dt = Math.min((now - last) / 1000, 0.1) // borne si l'onglet était en arrière-plan
     last = now
     const input = getInput()
-    if (input.reset) Object.assign(car, createCar(...START))
+    if (input.reset) {
+      Object.assign(car, createCar(...START))
+      cameraBearing = car.heading
+    }
     updateCar(car, input, dt, isOnRoad)
+    updateEngine(car.speed, input.throttle)
+    speedometer.textContent = `${Math.round(Math.abs(car.speed) * 3.6)} km/h`
+
+    // la caméra rattrape le cap de la voiture par le plus court chemin (de 350° à 10°, on passe par 0°)
+    const diff = ((car.heading - cameraBearing + 540) % 360) - 180
+    cameraBearing += diff * Math.min(1, CAMERA_LAG * dt)
     // jumpTo redessine la carte, donc aussi la couche de la voiture
-    map.jumpTo({ center: [car.lng, car.lat], bearing: car.heading, ...CAMERA })
+    map.jumpTo({
+      center: [car.lng, car.lat],
+      bearing: cameraBearing,
+      pitch: CAMERA.pitch,
+      zoom: CAMERA.zoom - (ZOOM_OUT * Math.abs(car.speed)) / MAX_SPEED,
+    })
     requestAnimationFrame(frame)
   }
 

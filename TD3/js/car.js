@@ -2,17 +2,22 @@ import * as THREE from 'three'
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js'
 import { MercatorCoordinate } from 'maplibre-gl'
 
-const MAX_SPEED = 20 // m/s (72 km/h)
+export const MAX_SPEED = 20 // m/s (72 km/h)
 const MAX_REVERSE = 5 // m/s
 const ACCEL = 8 // m/s²
 const BRAKE = 15 // m/s²
 const FRICTION = 3 // m/s², décélération quand on lâche tout
 const TURN_RATE = 90 // °/s à pleine vitesse de braquage
 const METERS_PER_DEG_LAT = 111320
+const MODEL_SCALE = 1.7 // le modèle fait environ 2,6 unités de long -> environ 4,4 m
+const WHEEL_RADIUS = 0.3 * MODEL_SCALE // m
+const MAX_WHEEL_ANGLE = THREE.MathUtils.degToRad(25)
+const WHEELS = ['wheel-front-left', 'wheel-front-right', 'wheel-back-left', 'wheel-back-right']
 
 // heading : cap en degrés, 0 = nord, sens horaire (comme le bearing de MapLibre)
+// steer : braquage affiché des roues avant (-1 à 1) ; wheelSpin : rotation des roues (rad)
 export function createCar(lng, lat, heading) {
-  return { lng, lat, heading, speed: 0 }
+  return { lng, lat, heading, speed: 0, steer: 0, wheelSpin: 0 }
 }
 
 // angles essayés, du plus petit au plus grand, pour longer le bord de la route au lieu de s'arrêter
@@ -30,6 +35,7 @@ export function updateCar(car, { throttle, steer }, dt, isOnRoad) {
   // on ne tourne pas à l'arrêt, et le volant s'inverse en marche arrière
   const grip = THREE.MathUtils.clamp(car.speed / 5, -1, 1)
   car.heading = (car.heading + steer * TURN_RATE * grip * dt + 360) % 360
+  car.steer += (steer - car.steer) * Math.min(1, 10 * dt) // le volant ne tourne pas instantanément
 
   // position atteinte en roulant dans la direction "heading" pendant dt
   const step = (heading) => {
@@ -57,15 +63,28 @@ export function updateCar(car, { throttle, steer }, dt, isOnRoad) {
     car.speed -= Math.sign(car.speed) * BRAKE * dt * (Math.abs(angle) / 60)
   }
   ;[car.lng, car.lat] = next
+  // une roue qui roule sans glisser tourne de (distance / rayon) radians
+  car.wheelSpin += (car.speed * dt) / WHEEL_RADIUS
 }
 
-// Sedan du Car Kit de Kenney (CC0) : environ 2,6 unités de long, l'avant vers +z
+// Sedan du Car Kit de Kenney (CC0), l'avant vers +z, roues = nœuds séparés nommés WHEELS
 function loadCarModel(scene) {
   new GLTFLoader().load(new URL('../assets/car.glb', import.meta.url).href, ({ scene: model }) => {
-    model.scale.setScalar(1.7) // -> environ 4,4 m, la taille d'une vraie berline
+    model.scale.setScalar(MODEL_SCALE)
     model.rotation.y = Math.PI // l'avant vers -z, la convention utilisée par la couche
+    for (const name of WHEELS) model.getObjectByName(name).rotation.order = 'YXZ' // rouler, puis braquer
     scene.add(model)
   })
+}
+
+// dans le repère du modèle : rouler en avant = rotation +x, braquer à droite = rotation -y
+function animateWheels(scene, car) {
+  for (const name of WHEELS) {
+    const wheel = scene.getObjectByName(name)
+    if (!wheel) return // modèle pas encore chargé
+    wheel.rotation.x = car.wheelSpin
+    wheel.rotation.y = name.includes('front') ? -car.steer * MAX_WHEEL_ANGLE : 0
+  }
 }
 
 // couche MapLibre qui dessine la voiture avec Three.js dans le même contexte WebGL que la carte
@@ -103,6 +122,7 @@ export function createCarLayer(car) {
         .multiply(new THREE.Matrix4().makeRotationY(-THREE.MathUtils.degToRad(car.heading)))
 
       camera.projectionMatrix = new THREE.Matrix4().fromArray(defaultProjectionData.mainMatrix).multiply(model)
+      animateWheels(scene, car)
       renderer.resetState()
       renderer.render(scene, camera)
     },

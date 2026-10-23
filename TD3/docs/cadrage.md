@@ -34,10 +34,10 @@ Objectif : passer d'une démo technique à un projet agréable à utiliser.
 
 **Partie 2 : sensation de conduite**
 
-- [ ] Caméra lissée : elle tourne avec un léger retard au lieu de rester collée au cap, et dézoome un peu avec la vitesse.
-- [ ] Roues qui tournent et braquent (le modèle de Kenney a des nœuds `wheel-front-left`, etc.).
-- [ ] Compteur de vitesse en km/h (HTML par-dessus la carte).
-- [ ] Son du moteur dont la tonalité suit la vitesse (Web Audio API).
+- [x] Caméra lissée : elle rattrape le cap de la voiture par le plus court chemin (`CAMERA_LAG`), et dézoome de 0,7 niveau à vitesse max (`ZOOM_OUT`).
+- [x] Roues qui tournent (distance / rayon) et roues avant qui braquent jusqu'à 25°, en animant les nœuds `wheel-*` du modèle (ordre de rotation `YXZ` : rouler, puis braquer).
+- [x] Compteur de vitesse en km/h en bas à gauche.
+- [x] Son du moteur ([engine.js](../js/engine.js)) : onde en dents de scie filtrée, de 40 Hz au ralenti à 160 Hz à vitesse max, plus forte quand on accélère. Il démarre au premier appui sur une touche (règle des navigateurs), `M` coupe le son, et il se met en pause quand l'onglet est caché.
 
 **Partie 3 : donner un but**
 
@@ -73,7 +73,8 @@ TD3/
 ├── js/
 │   ├── main.js       # création de la carte, boucle d'animation
 │   ├── car.js        # état de la voiture (position, cap, vitesse) + modèle Three.js (custom layer)
-│   └── controls.js   # clavier → accélération / direction / retour au départ
+│   ├── controls.js   # clavier → accélération / direction / retour au départ
+│   └── engine.js     # son du moteur (Web Audio API)
 └── assets/
     ├── car.glb       # Kenney Car Kit (CC0)
     └── Textures/     # texture utilisée par car.glb, à garder à côté
@@ -86,7 +87,7 @@ TD3/
 3. Déplacement en mètres converti en lng/lat :
    `dLat = dy / 111320`, `dLng = dx / (111320 * cos(lat))`.
    Si la position suivante quitte la route, la voiture glisse le long du bord (voir Partie 1).
-4. `map.jumpTo({ center: voiture, bearing: cap, pitch: 75, zoom: 20 })`.
+4. `map.jumpTo({ center: voiture, bearing: cap lissé, pitch: 75, zoom: 20 − dézoom selon la vitesse })`, mise à jour du son et du compteur.
 5. La couche custom redessine la voiture à sa position, orientée selon le cap.
 
 ## Étapes
