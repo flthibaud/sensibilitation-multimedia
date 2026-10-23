@@ -46,8 +46,12 @@ Objectif : passer d'une démo technique à un projet agréable à utiliser.
 
 **Partie 4 : ambiance**
 
-- [ ] Ciel (`sky` de MapLibre) au lieu du fond blanc, bâtiments un peu colorés.
-- [ ] Mode nuit : style sombre et phares de la voiture (lumière Three.js).
+- [x] Ciel (`map.setSky`), et le fond de la carte peint de la couleur de l'horizon : sinon une bande blanche apparaît au-delà des tuiles chargées. Immeubles couleur pierre de taille (`#e6dccb`).
+- [x] Mode nuit (`N`) : ciel sombre, carte assombrie par un filtre CSS (`brightness`), phares simulés par une tache lumineuse au sol devant la voiture. Limite : la carte n'est pas éclairée par Three.js, donc les phares n'éclairent pas les immeubles, et les rues ne sont pas éclairées.
+- [x] Vrais modèles 3D des monuments ([monuments.js](../js/monuments.js)), dessinés par la même couche Three.js que la voiture ([three-layer.js](../js/three-layer.js)). Les blocs gris OSM qui les représentaient sont masqués par un filtre de distance (`["distance", point] > hideRadius`) : 70 m autour de la tour, 30 m autour de l'Arc. Un premier essai par identifiants ne marchait pas : la tour est découpée en un bloc par étage, et les identifiants changent d'une tuile à l'autre.
+  - Tour Eiffel : [3D Model Repository d'OSM](https://conic.openstreetmap.de/model/4), CC0, texturée, à l'échelle réelle (10,7 Mo).
+  - Arc de Triomphe : [Wikimedia Commons](https://commons.wikimedia.org/wiki/File:Arc_de_Triomphe.stl), par Microsoft, CC BY 4.0 (crédit affiché dans les mentions de la carte). Fichier STL sans texture, teinté pierre, mis à l'échelle à 50 m de haut.
+- [ ] Autres monuments (Notre-Dame, Louvre, Sacré-Cœur, obélisque de la Concorde…) : aucun modèle libre trouvé sur ces deux sources. Pistes : Sketchfab (filtre « Downloadable » + licence CC, nécessite un compte pour télécharger), ou modèle simple fait dans Three.js (obélisque, pyramide du Louvre).
 
 **Partie 5 : rendu du TD**
 
@@ -71,13 +75,17 @@ TD3/
 ├── docs/
 ├── index.html        # carte plein écran + importmap (maplibre-gl, three)
 ├── js/
-│   ├── main.js       # création de la carte, boucle d'animation
-│   ├── car.js        # état de la voiture (position, cap, vitesse) + modèle Three.js (custom layer)
-│   ├── controls.js   # clavier → accélération / direction / retour au départ
-│   └── engine.js     # son du moteur (Web Audio API)
+│   ├── main.js         # création de la carte, boucle d'animation
+│   ├── car.js          # état et conduite de la voiture, son modèle 3D, ses phares
+│   ├── three-layer.js  # couche MapLibre qui dessine des objets Three.js placés en lng/lat
+│   ├── monuments.js    # modèles 3D des monuments + masquage des blocs OSM
+│   ├── ambiance.js     # ciel, couleur des immeubles, mode nuit
+│   ├── controls.js     # clavier → accélération / direction / retour au départ
+│   └── engine.js       # son du moteur (Web Audio API)
 └── assets/
-    ├── car.glb       # Kenney Car Kit (CC0)
-    └── Textures/     # texture utilisée par car.glb, à garder à côté
+    ├── car.glb         # Kenney Car Kit (CC0)
+    ├── Textures/       # texture utilisée par car.glb, à garder à côté
+    └── monuments/      # tour-eiffel.glb (CC0), arc-de-triomphe.stl (CC BY 4.0)
 ```
 
 ### Boucle d'une frame

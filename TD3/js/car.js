@@ -1,6 +1,5 @@
 import * as THREE from 'three'
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js'
-import { MercatorCoordinate } from 'maplibre-gl'
 
 export const MAX_SPEED = 20 // m/s (72 km/h)
 const MAX_REVERSE = 5 // m/s
@@ -67,64 +66,54 @@ export function updateCar(car, { throttle, steer }, dt, isOnRoad) {
   car.wheelSpin += (car.speed * dt) / WHEEL_RADIUS
 }
 
-// Sedan du Car Kit de Kenney (CC0), l'avant vers +z, roues = nœuds séparés nommés WHEELS
-function loadCarModel(scene) {
+// objet Three.js de la voiture : Sedan du Car Kit de Kenney (CC0) chargé dedans dès qu'il arrive,
+// et les phares (taches de lumière au sol), visibles seulement la nuit
+export function createCarObject() {
+  const object = new THREE.Group()
   new GLTFLoader().load(new URL('../assets/car.glb', import.meta.url).href, ({ scene: model }) => {
     model.scale.setScalar(MODEL_SCALE)
-    model.rotation.y = Math.PI // l'avant vers -z, la convention utilisée par la couche
+    model.rotation.y = Math.PI // le modèle a l'avant vers +z, la couche attend -z
     for (const name of WHEELS) model.getObjectByName(name).rotation.order = 'YXZ' // rouler, puis braquer
-    scene.add(model)
+    object.add(model)
   })
+  object.add(createHeadlights())
+  return object
+}
+
+// la carte n'est pas éclairée par Three.js : on simule les phares par une tache lumineuse
+// posée au sol devant la voiture (dégradé radial, mélange additif pour "éclaircir" ce qui est dessous)
+function createHeadlights() {
+  const canvas = document.createElement('canvas')
+  canvas.width = canvas.height = 128
+  const ctx = canvas.getContext('2d')
+  const gradient = ctx.createRadialGradient(64, 64, 0, 64, 64, 64)
+  gradient.addColorStop(0, 'rgba(255, 240, 200, 0.9)')
+  gradient.addColorStop(1, 'rgba(255, 240, 200, 0)')
+  ctx.fillStyle = gradient
+  ctx.fillRect(0, 0, 128, 128)
+
+  const pool = new THREE.Mesh(
+    new THREE.PlaneGeometry(8, 18),
+    new THREE.MeshBasicMaterial({
+      map: new THREE.CanvasTexture(canvas),
+      transparent: true,
+      blending: THREE.AdditiveBlending,
+      depthWrite: false,
+    }),
+  )
+  pool.rotation.x = -Math.PI / 2 // à plat sur le sol
+  pool.position.set(0, 0.05, -11) // devant la voiture (l'avant est vers -z)
+  pool.name = 'phares'
+  pool.visible = false
+  return pool
 }
 
 // dans le repère du modèle : rouler en avant = rotation +x, braquer à droite = rotation -y
-function animateWheels(scene, car) {
+export function animateWheels(object, car) {
   for (const name of WHEELS) {
-    const wheel = scene.getObjectByName(name)
+    const wheel = object.getObjectByName(name)
     if (!wheel) return // modèle pas encore chargé
     wheel.rotation.x = car.wheelSpin
     wheel.rotation.y = name.includes('front') ? -car.steer * MAX_WHEEL_ANGLE : 0
-  }
-}
-
-// couche MapLibre qui dessine la voiture avec Three.js dans le même contexte WebGL que la carte
-export function createCarLayer(car) {
-  let renderer, scene, camera
-
-  return {
-    id: 'car',
-    type: 'custom',
-    renderingMode: '3d', // partage le depth buffer : la voiture passe derrière les bâtiments
-
-    onAdd(map, gl) {
-      camera = new THREE.Camera()
-      scene = new THREE.Scene()
-      scene.add(new THREE.AmbientLight(0xffffff, 1.5))
-      const sun = new THREE.DirectionalLight(0xffffff, 2)
-      sun.position.set(30, 100, 50)
-      scene.add(sun)
-      loadCarModel(scene)
-
-      renderer = new THREE.WebGLRenderer({ canvas: map.getCanvas(), context: gl })
-      renderer.autoClear = false // sinon Three.js efface la carte
-    },
-
-    // mainMatrix travaille en coordonnées Mercator [0, 1] (modelViewProjectionMatrix, elle, est en pixels monde)
-    render(gl, { defaultProjectionData }) {
-      const origin = MercatorCoordinate.fromLngLat([car.lng, car.lat], 0)
-      const s = origin.meterInMercatorCoordinateUnits()
-
-      // repère Three.js (mètres, y vers le haut) -> repère Mercator (y vers le sud, z vers le haut)
-      const model = new THREE.Matrix4()
-        .makeTranslation(origin.x, origin.y, origin.z)
-        .scale(new THREE.Vector3(s, -s, s))
-        .multiply(new THREE.Matrix4().makeRotationX(Math.PI / 2))
-        .multiply(new THREE.Matrix4().makeRotationY(-THREE.MathUtils.degToRad(car.heading)))
-
-      camera.projectionMatrix = new THREE.Matrix4().fromArray(defaultProjectionData.mainMatrix).multiply(model)
-      animateWheels(scene, car)
-      renderer.resetState()
-      renderer.render(scene, camera)
-    },
   }
 }

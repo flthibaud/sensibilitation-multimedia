@@ -23,6 +23,13 @@
         font: 14px sans-serif;
         border-radius: 4px;
       }
+      /* sur tout #map (et pas seulement le canvas) pour assombrir aussi le fond peint sous l'horizon */
+      #map {
+        transition: filter 1s;
+      }
+      .nuit #map {
+        filter: brightness(0.45) saturate(0.7);
+      }
       #vitesse {
         position: absolute;
         bottom: 20px;
@@ -53,7 +60,7 @@
   </head>
   <body>
     <div id="map"></div>
-    <div id="aide">Z / ↑ avancer · S / ↓ freiner, reculer · Q D / ← → tourner · R recommencer · M couper le son</div>
+    <div id="aide">Z / ↑ avancer · S / ↓ freiner, reculer · Q D / ← → tourner · R recommencer · M couper le son · N jour / nuit</div>
     <div id="vitesse" aria-live="off">0 km/h</div>
     <div id="chargement" role="status">Chargement de Paris…</div>
 

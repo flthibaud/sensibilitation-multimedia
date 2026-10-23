@@ -1,7 +1,10 @@
 import * as maplibregl from 'maplibre-gl'
 import { getInput } from './controls.js'
-import { createCar, updateCar, createCarLayer, MAX_SPEED } from './car.js'
+import { createCar, updateCar, createCarObject, animateWheels, MAX_SPEED } from './car.js'
 import { updateEngine } from './engine.js'
+import { createThreeLayer } from './three-layer.js'
+import { createMonuments, hideMonumentBuildings } from './monuments.js'
+import { setupAmbiance } from './ambiance.js'
 
 // départ : sur la ligne des Champs-Élysées à la sortie du rond-point, face à l'Arc de Triomphe
 // (doit être sur une ligne de route, sinon la voiture est bloquée dès le départ)
@@ -21,13 +24,24 @@ const map = new maplibregl.Map({
   maxPitch: 85,
   ...CAMERA,
   interactive: false, // c'est la voiture qui pilote la caméra
+  // crédits des modèles 3D (obligatoire pour l'Arc de Triomphe, sous CC BY 4.0)
+  attributionControl: {
+    customAttribution: [
+      'Arc de Triomphe : Microsoft, <a href="https://commons.wikimedia.org/wiki/File:Arc_de_Triomphe.stl">Wikimedia Commons</a> (<a href="https://creativecommons.org/licenses/by/4.0/">CC BY 4.0</a>)',
+      'Tour Eiffel : <a href="https://conic.openstreetmap.de/model/4">3DMR</a> (CC0)',
+      'Voiture : <a href="https://kenney.nl/assets/car-kit">Kenney</a> (CC0)',
+    ],
+  },
 })
 
 // décale le point visé vers le bas de l'écran pour voir plus loin devant la voiture
 map.setPadding({ top: innerHeight * 0.4 })
 
 map.on('load', () => {
-  map.addLayer(createCarLayer(car))
+  const carObject = createCarObject()
+  map.addLayer(createThreeLayer('modeles-3d', [{ object: carObject, pose: car }, ...createMonuments()]))
+  hideMonumentBuildings(map)
+  setupAmbiance(map, carObject)
 
   // routes carrossables du style liberty (sans chemins piétons ni rails), tunnels exclus car invisibles
   const roadLayers = map
@@ -60,6 +74,7 @@ map.on('load', () => {
       cameraBearing = car.heading
     }
     updateCar(car, input, dt, isOnRoad)
+    animateWheels(carObject, car)
     updateEngine(car.speed, input.throttle)
     speedometer.textContent = `${Math.round(Math.abs(car.speed) * 3.6)} km/h`
 
