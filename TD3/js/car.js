@@ -1,4 +1,5 @@
 import * as THREE from 'three'
+import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js'
 import { MercatorCoordinate } from 'maplibre-gl'
 
 const MAX_SPEED = 20 // m/s (72 km/h)
@@ -15,7 +16,9 @@ export function createCar(lng, lat, heading) {
 }
 
 // modèle "arcade" : pas de vraie physique, juste de quoi rendre la conduite agréable
-export function updateCar(car, { throttle, steer }, dt) {
+// isOnRoad(lng, lat) : la voiture s'arrête net si elle allait QUITTER la route
+// (hors route, elle reste libre, sinon elle serait bloquée dès qu'elle démarre à côté d'une ligne)
+export function updateCar(car, { throttle, steer }, dt, isOnRoad) {
   if (throttle > 0) car.speed += (car.speed < 0 ? BRAKE : ACCEL) * dt
   else if (throttle < 0) car.speed -= (car.speed > 0 ? BRAKE : ACCEL) * dt
   else car.speed -= Math.sign(car.speed) * Math.min(Math.abs(car.speed), FRICTION * dt)
@@ -28,25 +31,23 @@ export function updateCar(car, { throttle, steer }, dt) {
   const rad = THREE.MathUtils.degToRad(car.heading)
   const east = Math.sin(rad) * car.speed * dt
   const north = Math.cos(rad) * car.speed * dt
-  car.lat += north / METERS_PER_DEG_LAT
-  car.lng += east / (METERS_PER_DEG_LAT * Math.cos(THREE.MathUtils.degToRad(car.lat)))
+  const lat = car.lat + north / METERS_PER_DEG_LAT
+  const lng = car.lng + east / (METERS_PER_DEG_LAT * Math.cos(THREE.MathUtils.degToRad(car.lat)))
+  if (!isOnRoad(lng, lat) && isOnRoad(car.lng, car.lat)) {
+    car.speed = 0
+    return
+  }
+  car.lat = lat
+  car.lng = lng
 }
 
-// voiture low-poly en cubes, en mètres, l'avant vers -z (convention Three.js)
-// shortcut: modèle fait main, à remplacer par un glTF (étape 5 du cadrage)
-function buildCarMesh() {
-  const car = new THREE.Group()
-  const box = (w, h, d, color, x, y, z) => {
-    const mesh = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), new THREE.MeshStandardMaterial({ color }))
-    mesh.position.set(x, y, z)
-    car.add(mesh)
-  }
-  box(1.8, 0.6, 4.2, 0xd62828, 0, 0.6, 0) // carrosserie
-  box(1.6, 0.5, 2, 0x222222, 0, 1.15, 0.3) // habitacle
-  for (const x of [-0.9, 0.9]) {
-    for (const z of [-1.3, 1.3]) box(0.3, 0.6, 0.6, 0x111111, x, 0.3, z) // roues
-  }
-  return car
+// Sedan du Car Kit de Kenney (CC0) : environ 2,6 unités de long, l'avant vers +z
+function loadCarModel(scene) {
+  new GLTFLoader().load(new URL('../assets/car.glb', import.meta.url).href, ({ scene: model }) => {
+    model.scale.setScalar(1.7) // -> environ 4,4 m, la taille d'une vraie berline
+    model.rotation.y = Math.PI // l'avant vers -z, la convention utilisée par la couche
+    scene.add(model)
+  })
 }
 
 // couche MapLibre qui dessine la voiture avec Three.js dans le même contexte WebGL que la carte
@@ -65,7 +66,7 @@ export function createCarLayer(car) {
       const sun = new THREE.DirectionalLight(0xffffff, 2)
       sun.position.set(30, 100, 50)
       scene.add(sun)
-      scene.add(buildCarMesh())
+      loadCarModel(scene)
 
       renderer = new THREE.WebGLRenderer({ canvas: map.getCanvas(), context: gl })
       renderer.autoClear = false // sinon Three.js efface la carte

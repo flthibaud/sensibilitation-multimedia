@@ -13,14 +13,14 @@ Choix technique détaillé : [choix-techno.md](choix-techno.md). En résumé : *
 Ville : **Paris**, départ au rond-point des Champs-Élysées, face à l'Arc de Triomphe.
 
 - [x] Carte MapLibre centrée sur Paris, bâtiments en 3D (OpenFreeMap `liberty`).
-- [x] Voiture visible : modèle en cubes Three.js. Reste à faire : le remplacer par un modèle glTF.
+- [x] Voiture visible : `sedan.glb` du [Car Kit de Kenney](https://kenney.nl/assets/car-kit) (licence CC0).
 - [x] Conduite au clavier : `Z`/`↑` avancer, `S`/`↓` freiner/reculer, `Q`/`←` et `D`/`→` tourner.
 - [x] Caméra 3e personne : la carte suit la voiture et tourne avec elle.
-- [ ] Déployé sur GitHub Pages avec le reste du dépôt.
+- [x] Déployé sur GitHub Pages avec le reste du dépôt.
 
 ### Bonus (si le temps le permet, dans cet ordre)
 
-1. Rester sur la route : bloquer l'avancée si la position suivante n'est pas sur une couche route.
+1. ✅ Rester sur la route : la voiture s'arrête si elle allait s'éloigner de plus de 8 m (`ROAD_MARGIN`) de toute ligne `road_*` ou `bridge_*` (chemins piétons et rails exclus). Limites : une seule marge pour toutes les routes, donc c'est trop large pour une petite rue et trop étroit pour une très grande avenue. Et on ne « glisse » pas le long du bord : il faut reculer.
 2. Compteur de vitesse (HUD en HTML par-dessus la carte).
 3. Choix de la ville de départ (liste ou géolocalisation, réutilise le TD1).
 4. Cycle jour/nuit (couleurs du style + lumière Three.js).
